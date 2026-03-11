@@ -130,6 +130,26 @@ function initAuthModal() {
 
     sucEl.textContent = "Account created! Check your email to confirm, then log in.";
   });
+
+  // Google Sign-In (shared handler for both login & signup tabs)
+  async function handleGoogleSignIn() {
+    const { error } = await db.auth.signInWithOAuth({
+      provider: "google",
+      options: {
+        redirectTo: window.location.href   // returns user back to the same page
+      }
+    });
+    if (error) {
+      // Show error in whichever tab is currently visible
+      const activeErr = document.getElementById("auth-login").style.display !== "none"
+        ? document.getElementById("login-error")
+        : document.getElementById("signup-error");
+      activeErr.textContent = error.message;
+    }
+  }
+
+  document.getElementById("btn-google-login").addEventListener("click", handleGoogleSignIn);
+  document.getElementById("btn-google-signup").addEventListener("click", handleGoogleSignIn);
 }
 
 async function onLogin() {
@@ -673,8 +693,20 @@ window.onload = async function () {
   db.auth.onAuthStateChange(async (_event, session) => {
     if (session) {
       currentUser = session.user;
+
+      // For Google OAuth users, upsert profile row if it doesn't exist yet
+      if (currentUser.app_metadata?.provider === "google" || currentUser.identities?.some(i => i.provider === "google")) {
+        const fullName = currentUser.user_metadata?.full_name || currentUser.user_metadata?.name || "";
+        const email    = currentUser.email || "";
+        await db.from("profiles").upsert(
+          { id: currentUser.id, full_name: fullName, email },
+          { onConflict: "id", ignoreDuplicates: true }
+        );
+      }
+
       await loadCartFromDB();
       updateUserUI();
+      hideAuthModal();
     } else {
       currentUser = null;
       cart = [];
